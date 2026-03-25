@@ -3,7 +3,7 @@ library(isotree)
 library(ggplot2)
 
 # 1. Load the Parquet file you generated from Python
-df <- read_parquet("C:/Projects/HWSW/isolation/latest_satellites.parquet")
+df <- read_parquet("C:/Projects/HWSW/major/isolation/latest_satellites.parquet")
 
 # 2. Select the features that define "Orbital Physics"
 # We drop IDs and Names because the model only cares about numbers
