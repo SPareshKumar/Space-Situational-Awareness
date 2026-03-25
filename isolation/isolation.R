@@ -2,8 +2,9 @@ library(arrow)
 library(isotree)
 library(ggplot2)
 
-# 1. Load the Parquet file you generated from Python
-df <- read_parquet("C:/Projects/HWSW/major/isolation/latest_satellites.parquet")
+# 1. Load the Parquet file
+project_folder <- paste0(dirname(sys.frame(1)$ofile), "/")
+df <- read_parquet(paste0(project_folder, "latest_satellites.parquet"))
 
 # 2. Select the features that define "Orbital Physics"
 # We drop IDs and Names because the model only cares about numbers
@@ -78,4 +79,4 @@ library(isotree)
 
 iso_model <- isolation.forest(df)
 
-saveRDS(iso_model, "C:/Projects/HWSW/isolation/isolation_model.rds")
+saveRDS(iso_model, paste0(project_folder, "isolation_model.rds"))

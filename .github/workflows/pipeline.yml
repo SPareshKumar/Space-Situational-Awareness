@@ -1,0 +1,62 @@
+name: Space Guardian Data Pipeline
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Daily at midnight UTC
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Required for stefanzweifel/git-auto-commit-action
+          ref: ${{ github.head_ref }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; else pip install requests pandas pyarrow; fi
+          
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: 'release'
+          use-public-rspm: true
+
+      - name: Install R package dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          cache-version: 1
+          packages: |
+            any::arrow
+            any::isotree
+            any::asteRisk
+            any::sets
+            any::jsonlite
+
+      - name: Fetch fresh satellite data (ingestion.py)
+        env:
+          SPACE_TRACK_USERNAME: ${{ secrets.SPACE_TRACK_USERNAME }}
+          SPACE_TRACK_PASSWORD: ${{ secrets.SPACE_TRACK_PASSWORD }}
+        run: |
+          python ingestion.py
+          
+      - name: Run fuzzy.R pipeline
+        run: |
+          # This runs fuzzy.R and copies the generated json to mobilisation/
+          bash run_pipeline.sh
+
+      - name: Commit and push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Automated data refresh: Parquet, satellites.txt & Threats JSON"

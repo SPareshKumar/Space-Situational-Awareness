@@ -1,0 +1,43 @@
+name: Deploy Space Guardian to GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: # Allows manual trigger
+  workflow_run:      # Automatically run after data pipeline finishes
+    workflows: ["Space Guardian Data Pipeline"]
+    types:
+      - completed
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    # Run if triggered by push/dispatch, OR if triggered by workflow_run and that run was successful
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+        
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'visualisation' # Deploying the visualisation folder
+          
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

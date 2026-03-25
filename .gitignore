@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# Large binary/data files (RDS files are ignored, but we want to track parity/JSON/Parquet for the pipeline)
+*.rds
+
+# Ensure workflows and critical data are NOT ignored
+!.github/
+!*.parquet
+!*.json
+!satellites.txt
+
+# R session artifacts
+.Rhistory
+.RData
+.Rproj.user/
+
+# Node
+node_modules/

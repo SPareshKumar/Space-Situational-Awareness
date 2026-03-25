@@ -5,8 +5,9 @@
 library(asteRisk)
 library(arrow)
 
-# 1. Load the data (assuming you have your Parquet file from the pipeline)
-df <- read_parquet("C:/Projects/HWSW/isolation/latest_satellites.parquet")
+# 1. Load the data
+project_folder <- paste0(dirname(sys.frame(1)$ofile), "/")
+df <- read_parquet(paste0(project_folder, "latest_satellites.parquet"))
 
 # Ensure columns are character strings for the parser
 df$TLE_LINE1 <- as.character(df$TLE_LINE1)

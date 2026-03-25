@@ -13,8 +13,8 @@ library(jsonlite)
 
 print("Starting Space Guardian Pipeline...")
 
-# Define your exact Windows project folder path
-project_folder <- "C:/Projects/HWSW/isolation/"
+# Portable path resolution (works on any OS when run via Rscript or source())
+project_folder <- paste0(dirname(sys.frame(1)$ofile), "/")
 input_file <- paste0(project_folder, "latest_satellites.parquet")
 output_file <- paste0(project_folder, "space_guardian_threats.json")
 
@@ -144,9 +144,9 @@ print("Exporting actionable intelligence to JSON...")
 export_data <- threats[, c("NORAD_CAT_ID", "OBJECT_NAME", "TLE_LINE1", "TLE_LINE2", 
                            "Future_Distance_to_HVA_km", "Anomaly_Score", "Final_Threat_Score")]
 
-json_data <- toJSON(export_data, pretty = TRUE)
+json_data <- toJSON(export_data, pretty = TRUE, na = "null")
 
-# Save directly to your Windows 11 project directory
+# Save pipeline output
 write(json_data, output_file)
 
 print("=========================================================")
