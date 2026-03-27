@@ -9,7 +9,7 @@
 !*.parquet
 !*.json
 !satellites.txt
-
+.env
 # R session artifacts
 .Rhistory
 .RData

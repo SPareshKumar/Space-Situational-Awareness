@@ -1,3 +1,4 @@
+from dotenv import load_dotenv
 import os
 import pandas as pd
 from spacetrack import SpaceTrackClient
@@ -12,8 +13,9 @@ TLE_TXT_PATH = os.path.join(PROJECT_ROOT, "visualisation", "satellites.txt")
 CACHE_EXPIRY_HOURS = 24
 
 # Use environment variables for authentication (for GitHub Actions)
-username = os.environ.get('SPACE_TRACK_USERNAME', 's.paresh.ug23@nsut.ac.in')
-password = os.environ.get('SPACE_TRACK_PASSWORD', 'P2a0r0e5shspace')
+username =os.getenv("API_KEY")
+password = os.getenv("DB_PASSWORD")
+
 
 st = SpaceTrackClient(identity=username, password=password)
 
