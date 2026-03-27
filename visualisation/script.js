@@ -41,28 +41,36 @@ fetch('space_guardian_threats.json')
 
 function addSatelliteToGlobe(tle1, tle2) {
     const satrec = satellite.twoline2satrec(tle1, tle2);
-    const noradId = String(satrec.satnum).trim();
+    // satnum can be a number or string; let's force it to a clean string
+    const noradId = String(satrec.satnum).replace(/^0+/, '').trim(); 
     const threat = threatMap[noradId] || null;
 
-    // Default style for normal satellites
-    let color = Cesium.Color.CYAN;
-    let size = 5;
+    // Default style: CYAN for normal satellites
+    let color = Cesium.Color.CYAN.withAlpha(0.6);
+    let size = 4;
     let label = 'Satellite ' + (noradId || 'Unknown');
 
-    // Color-code threat satellites by Final_Threat_Score
+    // If it's a known threat (from the R pipeline)
     if (threat) {
-        const score = threat.Final_Threat_Score;
-        if (score != null && score >= 70) {
+        const score = threat.Final_Threat_Score || 0;
+        
+        // Critical: Red
+        if (score >= 70) {
             color = Cesium.Color.RED;
-            size = 10;
-        } else if (score != null && score >= 40) {
+            size = 12;
+            console.log("ALERT: Critical threat detected!", threat.OBJECT_NAME, "(score: " + score + ")");
+        } 
+        // Warning: Orange
+        else if (score >= 40) {
             color = Cesium.Color.ORANGE;
-            size = 8;
-        } else {
+            size = 10;
+        } 
+        // Monitor: Yellow
+        else {
             color = Cesium.Color.YELLOW;
-            size = 7;
+            size = 8;
         }
-        label = threat.OBJECT_NAME || label;
+        label = (threat.OBJECT_NAME || label) + " [" + score.toFixed(0) + "]";
     }
 
     const entityOptions = {

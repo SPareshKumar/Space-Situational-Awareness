@@ -93,8 +93,8 @@ calculate_future_distance <- function(line1, line2) {
 # Apply distance calculation to all satellites
 df$Future_Distance_to_HVA_km <- mapply(calculate_future_distance, df$TLE_LINE1, df$TLE_LINE2)
 
-# Filter for relevant physical threats (e.g., within 100km) to save compute time
-threats <- subset(df, Future_Distance_to_HVA_km < 100)
+# Filter for relevant physical threats (e.g., within 50km)
+threats <- subset(df, Future_Distance_to_HVA_km < 50)
 threats <- threats[order(threats$Future_Distance_to_HVA_km), ]
 
 print(paste("Found", nrow(threats), "satellites in close proximity."))
@@ -113,11 +113,14 @@ variables <- set(
   Threat = fuzzy_partition(varnames = c(Low = 10, Warning = 50, Critical = 90), sd = 15)
 )
 
-# Define the Logic Rules
+# Define the Logic Rules (Improved sensitivity)
 rules <- set(
   fuzzy_rule(Distance %is% Close && Anomaly %is% Malicious, Threat %is% Critical),
+  fuzzy_rule(Distance %is% Close && Anomaly %is% Suspicious, Threat %is% Critical), # Suspicious + Close = Critical
   fuzzy_rule(Distance %is% Close && Anomaly %is% Normal, Threat %is% Warning),
-  fuzzy_rule(Distance %is% Medium && Anomaly %is% Malicious, Threat %is% Warning),
+  fuzzy_rule(Distance %is% Medium && Anomaly %is% Malicious, Threat %is% Critical),  # Malicious + Medium = Critical
+  fuzzy_rule(Distance %is% Medium && Anomaly %is% Suspicious, Threat %is% Warning),
+  fuzzy_rule(Distance %is% Far && Anomaly %is% Malicious, Threat %is% Warning),     # Malicious even if Far = Warning
   fuzzy_rule(Distance %is% Far, Threat %is% Low),
   fuzzy_rule(Distance %is% Medium && Anomaly %is% Normal, Threat %is% Low)
 )
@@ -127,9 +130,23 @@ space_guardian_fis <- fuzzy_system(variables, rules)
 # Calculation Function
 calculate_threat <- function(dist, anom) {
   if(is.na(dist) || is.na(anom)) return(0)
-  dist_capped <- min(dist, 100) 
-  inference <- fuzzy_inference(space_guardian_fis, list(Distance = dist_capped, Anomaly = anom))
-  return(round(gset_defuzzify(inference, "centroid"), 1))
+  
+  # Ensure inputs are capped to the universe of discourse
+  dist_val <- min(max(dist, 0), 100)
+  anom_val <- min(max(anom, 0), 1.0)
+  
+  inference <- fuzzy_inference(space_guardian_fis, list(Distance = dist_val, Anomaly = anom_val))
+  
+  # Defuzzify: if inference is empty or invalid, return 0
+  res <- tryCatch({
+    val <- gset_defuzzify(inference, "centroid")
+    if(is.nan(val) || is.na(val)) return(0)
+    return(round(val, 1))
+  }, error = function(e) { 
+    return(0) 
+  })
+  
+  return(res)
 }
 
 # Apply Fuzzy Logic only to the subsetted physical threats

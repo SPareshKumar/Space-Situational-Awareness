@@ -14,6 +14,10 @@ if ! command -v Rscript &> /dev/null; then
     exit 1
 fi
 
+# Run the ingestion script first (handles strictness/caching internally)
+echo "Ensuring fresh satellite data..."
+python3 ingestion.py
+
 # Run the master pipeline
 echo "Running fuzzy.R (Isolation Forest + SGP4 + Fuzzy Logic)..."
 Rscript "$SCRIPT_DIR/isolation/fuzzy.R"
