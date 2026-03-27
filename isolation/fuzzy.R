@@ -92,10 +92,22 @@ calculate_future_distance <- function(line1, line2) {
 
 # Apply distance calculation to all satellites
 df$Future_Distance_to_HVA_km <- mapply(calculate_future_distance, df$TLE_LINE1, df$TLE_LINE2)
+df$Future_Distance_to_HVA_km[1] <- NA  # Exclude HVA from self-comparison
 
-# Filter for relevant physical threats (e.g., within 50km)
-threats <- subset(df, Future_Distance_to_HVA_km < 50)
+# Orbit regime classification based on mean motion (rev/day)
+df$Orbit_Regime <- ifelse(df$MEAN_MOTION > 11, "LEO",
+                   ifelse(df$MEAN_MOTION > 0.9 & df$MEAN_MOTION < 1.1, "GEO", "MEO"))
+
+# Regime-specific conjunction thresholds (km): LEO=75, GEO=20, MEO=150
+df$Threat_Threshold <- ifelse(df$Orbit_Regime == "LEO", 75,
+                       ifelse(df$Orbit_Regime == "GEO", 20, 150))
+
+# Filter using regime-specific thresholds
+threats <- subset(df, !is.na(Future_Distance_to_HVA_km) & Future_Distance_to_HVA_km < Threat_Threshold)
 threats <- threats[order(threats$Future_Distance_to_HVA_km), ]
+
+# Scale distance to 0-100 for fuzzy system (normalized by regime threshold)
+threats$Scaled_Distance <- (threats$Future_Distance_to_HVA_km / threats$Threat_Threshold) * 100
 
 print(paste("Found", nrow(threats), "satellites in close proximity."))
 
@@ -121,7 +133,8 @@ rules <- set(
   fuzzy_rule(Distance %is% Medium && Anomaly %is% Malicious, Threat %is% Critical),  # Malicious + Medium = Critical
   fuzzy_rule(Distance %is% Medium && Anomaly %is% Suspicious, Threat %is% Warning),
   fuzzy_rule(Distance %is% Far && Anomaly %is% Malicious, Threat %is% Warning),     # Malicious even if Far = Warning
-  fuzzy_rule(Distance %is% Far, Threat %is% Low),
+  fuzzy_rule(Distance %is% Far && Anomaly %is% Normal, Threat %is% Low),
+  fuzzy_rule(Distance %is% Far && Anomaly %is% Suspicious, Threat %is% Low),
   fuzzy_rule(Distance %is% Medium && Anomaly %is% Normal, Threat %is% Low)
 )
 
@@ -149,8 +162,8 @@ calculate_threat <- function(dist, anom) {
   return(res)
 }
 
-# Apply Fuzzy Logic only to the subsetted physical threats
-threats$Final_Threat_Score <- mapply(calculate_threat, threats$Future_Distance_to_HVA_km, threats$Anomaly_Score)
+# Apply Fuzzy Logic using scaled distance (normalized to 0-100 by orbit regime)
+threats$Final_Threat_Score <- mapply(calculate_threat, threats$Scaled_Distance, threats$Anomaly_Score)
 
 # -------------------------------------------------------------------------
 # 5. EXPORT LAYER: JSON GENERATION
@@ -158,8 +171,9 @@ threats$Final_Threat_Score <- mapply(calculate_threat, threats$Future_Distance_t
 print("Exporting actionable intelligence to JSON...")
 
 # Select only the columns needed by the CesiumJS frontend
-export_data <- threats[, c("NORAD_CAT_ID", "OBJECT_NAME", "TLE_LINE1", "TLE_LINE2", 
-                           "Future_Distance_to_HVA_km", "Anomaly_Score", "Final_Threat_Score")]
+export_data <- threats[, c("NORAD_CAT_ID", "OBJECT_NAME", "TLE_LINE1", "TLE_LINE2",
+                           "Future_Distance_to_HVA_km", "Anomaly_Score", "Final_Threat_Score",
+                           "Orbit_Regime", "Threat_Threshold")]
 
 json_data <- toJSON(export_data, pretty = TRUE, na = "null")
 
