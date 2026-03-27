@@ -104,13 +104,17 @@ function addSatelliteToGlobe(tle1, tle2) {
     // Add click-to-inspect info box for threat satellites
     if (threat) {
         const score = threat.Final_Threat_Score;
-        const dist = threat.Future_Distance_to_HVA_km;
-        const anom = threat.Anomaly_Score;
+        const dist  = threat.Min_Conjunction_Distance_km;
+        const anom  = threat.Anomaly_Score;
+        const regime = threat.Orbit_Regime || 'N/A';
+        const nearestNorad = threat.Nearest_Threat_NORAD || 'N/A';
         entityOptions.description =
             '<table style="width:100%; font-family:monospace;">' +
             '<tr><td><b>NORAD ID</b></td><td>' + threat.NORAD_CAT_ID + '</td></tr>' +
             '<tr><td><b>Object</b></td><td>' + (threat.OBJECT_NAME || 'Unknown') + '</td></tr>' +
-            '<tr><td><b>Distance to HVA</b></td><td>' + (dist != null ? dist.toFixed(2) + ' km' : 'N/A') + '</td></tr>' +
+            '<tr><td><b>Orbit Regime</b></td><td>' + regime + '</td></tr>' +
+            '<tr><td><b>Conjunction Dist</b></td><td>' + (dist != null ? dist.toFixed(2) + ' km' : 'N/A') + '</td></tr>' +
+            '<tr><td><b>Nearest Threat</b></td><td>NORAD ' + nearestNorad + '</td></tr>' +
             '<tr><td><b>Anomaly Score</b></td><td>' + (anom != null ? anom.toFixed(4) : 'N/A') + '</td></tr>' +
             '<tr><td><b>Threat Score</b></td><td>' + (score != null ? score.toFixed(1) : 'N/A') + '</td></tr>' +
             '</table>';

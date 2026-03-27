@@ -21,7 +21,7 @@ if (length(script_arg) > 0) {
 } else {
   project_folder <- paste0(dirname(normalizePath(sys.frame(1)$ofile)), "/")
 }
-input_file <- paste0(project_folder, "latest_satellites.parquet")
+input_file  <- paste0(project_folder, "latest_satellites.parquet")
 output_file <- paste0(project_folder, "space_guardian_threats.json")
 
 # -------------------------------------------------------------------------
@@ -29,164 +29,191 @@ output_file <- paste0(project_folder, "space_guardian_threats.json")
 # -------------------------------------------------------------------------
 print(paste("Reading database from:", input_file))
 df <- read_parquet(input_file)
-
-# Ensure TLE lines are characters for the parser
 df$TLE_LINE1 <- as.character(df$TLE_LINE1)
 df$TLE_LINE2 <- as.character(df$TLE_LINE2)
-
 print(paste("Loaded", nrow(df), "satellites from database."))
 
 # -------------------------------------------------------------------------
-# 2. SECURITY LAYER: ISOLATION FOREST
+# 2. SECURITY LAYER: ISOLATION FOREST (all satellites)
 # -------------------------------------------------------------------------
 print("Running Unsupervised Anomaly Detection...")
-
-# Select the orbital physics features
 features <- df[, c("INCLINATION", "ECCENTRICITY", "MEAN_MOTION", "BSTAR")]
-features[is.na(features)] <- 0 # Handle any rare missing values
-
-# Train the forest and predict anomaly scores
+features[is.na(features)] <- 0
 set.seed(42)
-iso_model <- isolation.forest(features, ntrees=100, sample_size=256)
+iso_model <- isolation.forest(features, ntrees = 100, sample_size = 256)
 df$Anomaly_Score <- predict(iso_model, features)
 
 # -------------------------------------------------------------------------
-# 3. PHYSICS LAYER: SGP4 CONJUNCTION ASSESSMENT
+# 3. ORBIT REGIME CLASSIFICATION
 # -------------------------------------------------------------------------
-print("Propagating orbits and calculating future distances...")
-
-# Unit Conversions required for SGP4 engine
-deg2rad <- pi / 180
-revPerDay2radPerMin <- (2 * pi) / 1440
-prediction_time_minutes <- 120
-
-# Define High-Value Asset (HVA) - Using the 1st row as our target (e.g., Vanguard/ISS)
-hva_line1 <- df$TLE_LINE1[1]
-hva_line2 <- df$TLE_LINE2[1]
-
-hva_tle <- parseTLElines(c(hva_line1, hva_line2))
-hva_future <- sgp4(
-  n0 = hva_tle$meanMotion * revPerDay2radPerMin, 
-  e0 = hva_tle$eccentricity, 
-  i0 = hva_tle$inclination * deg2rad, 
-  M0 = hva_tle$meanAnomaly * deg2rad, 
-  omega0 = hva_tle$perigeeArgument * deg2rad, 
-  OMEGA0 = hva_tle$ascension * deg2rad, 
-  Bstar = hva_tle$Bstar,
-  targetTime = prediction_time_minutes
-)
-hva_position <- hva_future$position 
-
-# Distance Calculator Function
-calculate_future_distance <- function(line1, line2) {
-  tryCatch({
-    target_tle <- parseTLElines(c(line1, line2))
-    target_future <- sgp4(
-      n0 = target_tle$meanMotion * revPerDay2radPerMin, 
-      e0 = target_tle$eccentricity, 
-      i0 = target_tle$inclination * deg2rad, 
-      M0 = target_tle$meanAnomaly * deg2rad, 
-      omega0 = target_tle$perigeeArgument * deg2rad, 
-      OMEGA0 = target_tle$ascension * deg2rad, 
-      Bstar = target_tle$Bstar,
-      targetTime = prediction_time_minutes
-    )
-    # 3D Euclidean Distance
-    return(sqrt(sum((hva_position - target_future$position)^2)))
-  }, error = function(e) { return(NA) })
-}
-
-# Apply distance calculation to all satellites
-df$Future_Distance_to_HVA_km <- mapply(calculate_future_distance, df$TLE_LINE1, df$TLE_LINE2)
-df$Future_Distance_to_HVA_km[1] <- NA  # Exclude HVA from self-comparison
-
-# Orbit regime classification based on mean motion (rev/day)
 df$Orbit_Regime <- ifelse(df$MEAN_MOTION > 11, "LEO",
                    ifelse(df$MEAN_MOTION > 0.9 & df$MEAN_MOTION < 1.1, "GEO", "MEO"))
 
-# Regime-specific conjunction thresholds (km): LEO=75, GEO=20, MEO=150
-df$Threat_Threshold <- ifelse(df$Orbit_Regime == "LEO", 75,
-                       ifelse(df$Orbit_Regime == "GEO", 20, 150))
-
-# Filter using regime-specific thresholds
-threats <- subset(df, !is.na(Future_Distance_to_HVA_km) & Future_Distance_to_HVA_km < Threat_Threshold)
-threats <- threats[order(threats$Future_Distance_to_HVA_km), ]
-
-# Scale distance to 0-100 for fuzzy system (normalized by regime threshold)
-threats$Scaled_Distance <- (threats$Future_Distance_to_HVA_km / threats$Threat_Threshold) * 100
-
-print(paste("Found", nrow(threats), "satellites in close proximity."))
+df$Threat_Threshold <- ifelse(df$Orbit_Regime == "LEO",  75,
+                       ifelse(df$Orbit_Regime == "GEO",  20, 150))
 
 # -------------------------------------------------------------------------
-# 4. INTELLIGENCE LAYER: FUZZY LOGIC DECISION ENGINE
+# 4. PHYSICS LAYER: SGP4 — propagate ALL satellites
+# -------------------------------------------------------------------------
+print("Propagating all orbits to future positions (120 min)...")
+
+deg2rad            <- pi / 180
+revPerDay2radPerMin <- (2 * pi) / 1440
+prediction_time_minutes <- 120
+
+propagate_to_position <- function(line1, line2) {
+  tryCatch({
+    tle    <- parseTLElines(c(line1, line2))
+    result <- sgp4(
+      n0     = tle$meanMotion       * revPerDay2radPerMin,
+      e0     = tle$eccentricity,
+      i0     = tle$inclination      * deg2rad,
+      M0     = tle$meanAnomaly      * deg2rad,
+      omega0 = tle$perigeeArgument  * deg2rad,
+      OMEGA0 = tle$ascension        * deg2rad,
+      Bstar  = tle$Bstar,
+      targetTime = prediction_time_minutes
+    )
+    return(result$position)
+  }, error = function(e) { return(c(NA_real_, NA_real_, NA_real_)) })
+}
+
+positions_list <- mapply(propagate_to_position, df$TLE_LINE1, df$TLE_LINE2, SIMPLIFY = FALSE)
+pos_matrix     <- do.call(rbind, positions_list)   # N x 3 ECI positions (km)
+print("Orbit propagation complete.")
+
+# -------------------------------------------------------------------------
+# 5. CONJUNCTION ANALYSIS: top-N anomalous vs same-regime neighbours
+# -------------------------------------------------------------------------
+print("Running regime-aware conjunction analysis...")
+
+# Max anomalous candidates to check per regime
+TOP_N <- list(LEO = 500, GEO = 100, MEO = 200)
+
+df$Min_Conjunction_Distance_km <- NA_real_
+df$Nearest_Threat_Anomaly      <- NA_real_
+df$Nearest_Threat_NORAD        <- NA_integer_
+
+for (regime in c("LEO", "GEO", "MEO")) {
+  regime_idx <- which(df$Orbit_Regime == regime)
+  if (length(regime_idx) == 0) next
+
+  threshold  <- df$Threat_Threshold[regime_idx[1]]
+  top_count  <- min(TOP_N[[regime]], length(regime_idx))
+
+  # Pick top-N most anomalous satellites in this regime as candidates
+  regime_anomaly     <- df$Anomaly_Score[regime_idx]
+  cand_local_idx     <- order(regime_anomaly, decreasing = TRUE)[1:top_count]
+  cand_global_idx    <- regime_idx[cand_local_idx]
+
+  regime_positions   <- pos_matrix[regime_idx, , drop = FALSE]
+  cand_positions     <- pos_matrix[cand_global_idx, , drop = FALSE]
+
+  print(paste(regime, ": checking", top_count, "candidates against",
+              length(regime_idx), "satellites"))
+
+  # Distance matrix: candidates (rows) x all regime satellites (cols)
+  dist_matrix <- matrix(NA_real_, nrow = top_count, ncol = length(regime_idx))
+
+  for (k in seq_len(top_count)) {
+    cand_pos <- cand_positions[k, ]
+    if (any(is.na(cand_pos))) next
+    diffs            <- regime_positions - matrix(cand_pos, nrow = nrow(regime_positions),
+                                                   ncol = 3, byrow = TRUE)
+    dist_matrix[k, ] <- sqrt(rowSums(diffs^2))
+  }
+
+  # Mask self-distances so candidates are not their own nearest neighbour
+  for (k in seq_len(top_count)) {
+    self_local <- which(regime_idx == cand_global_idx[k])
+    if (length(self_local) > 0) dist_matrix[k, self_local] <- Inf
+  }
+
+  # For each regime satellite: find minimum distance across all candidates
+  min_distances       <- apply(dist_matrix, 2, function(col) min(col, na.rm = TRUE))
+  best_candidate_local <- apply(dist_matrix, 2, function(col) {
+    m <- which.min(col); if (length(m) == 0) return(NA_integer_); m
+  })
+
+  # Keep only satellites within threshold
+  nearby_mask        <- is.finite(min_distances) & min_distances < threshold
+  nearby_regime_local <- which(nearby_mask)
+  if (length(nearby_regime_local) == 0) next
+
+  nearby_global       <- regime_idx[nearby_regime_local]
+  best_cand_global    <- cand_global_idx[best_candidate_local[nearby_regime_local]]
+
+  df$Min_Conjunction_Distance_km[nearby_global] <- min_distances[nearby_regime_local]
+  df$Nearest_Threat_Anomaly[nearby_global]      <- df$Anomaly_Score[best_cand_global]
+  df$Nearest_Threat_NORAD[nearby_global]        <- df$NORAD_CAT_ID[best_cand_global]
+}
+
+threats <- subset(df, !is.na(Min_Conjunction_Distance_km))
+threats <- threats[order(threats$Min_Conjunction_Distance_km), ]
+threats$Scaled_Distance <- (threats$Min_Conjunction_Distance_km / threats$Threat_Threshold) * 100
+
+print(paste("Found", nrow(threats), "satellites in conjunction events."))
+
+# -------------------------------------------------------------------------
+# 6. INTELLIGENCE LAYER: FUZZY LOGIC DECISION ENGINE
 # -------------------------------------------------------------------------
 print("Evaluating Multi-Domain Threat Levels...")
 
 sets_options("universe", NULL)
 
-# Define the Fuzzy Variables
 variables <- set(
   Distance = fuzzy_partition(varnames = c(Close = 0, Medium = 50, Far = 100), sd = 20),
-  Anomaly = fuzzy_partition(varnames = c(Normal = 0, Suspicious = 0.5, Malicious = 1.0), sd = 0.2),
-  Threat = fuzzy_partition(varnames = c(Low = 10, Warning = 50, Critical = 90), sd = 15)
+  Anomaly  = fuzzy_partition(varnames = c(Normal = 0, Suspicious = 0.5, Malicious = 1.0), sd = 0.2),
+  Threat   = fuzzy_partition(varnames = c(Low = 10, Warning = 50, Critical = 90), sd = 15)
 )
 
-# Define the Logic Rules (Improved sensitivity)
 rules <- set(
-  fuzzy_rule(Distance %is% Close && Anomaly %is% Malicious, Threat %is% Critical),
-  fuzzy_rule(Distance %is% Close && Anomaly %is% Suspicious, Threat %is% Critical), # Suspicious + Close = Critical
-  fuzzy_rule(Distance %is% Close && Anomaly %is% Normal, Threat %is% Warning),
-  fuzzy_rule(Distance %is% Medium && Anomaly %is% Malicious, Threat %is% Critical),  # Malicious + Medium = Critical
+  fuzzy_rule(Distance %is% Close  && Anomaly %is% Malicious,  Threat %is% Critical),
+  fuzzy_rule(Distance %is% Close  && Anomaly %is% Suspicious, Threat %is% Critical),
+  fuzzy_rule(Distance %is% Close  && Anomaly %is% Normal,     Threat %is% Warning),
+  fuzzy_rule(Distance %is% Medium && Anomaly %is% Malicious,  Threat %is% Critical),
   fuzzy_rule(Distance %is% Medium && Anomaly %is% Suspicious, Threat %is% Warning),
-  fuzzy_rule(Distance %is% Far && Anomaly %is% Malicious, Threat %is% Warning),     # Malicious even if Far = Warning
-  fuzzy_rule(Distance %is% Far && Anomaly %is% Normal, Threat %is% Low),
-  fuzzy_rule(Distance %is% Far && Anomaly %is% Suspicious, Threat %is% Low),
-  fuzzy_rule(Distance %is% Medium && Anomaly %is% Normal, Threat %is% Low)
+  fuzzy_rule(Distance %is% Far    && Anomaly %is% Malicious,  Threat %is% Warning),
+  fuzzy_rule(Distance %is% Far    && Anomaly %is% Normal,     Threat %is% Low),
+  fuzzy_rule(Distance %is% Far    && Anomaly %is% Suspicious, Threat %is% Low),
+  fuzzy_rule(Distance %is% Medium && Anomaly %is% Normal,     Threat %is% Low)
 )
 
 space_guardian_fis <- fuzzy_system(variables, rules)
 
-# Calculation Function
 calculate_threat <- function(dist, anom) {
-  if(is.na(dist) || is.na(anom)) return(0)
-  
-  # Ensure inputs are capped to the universe of discourse
+  if (is.na(dist) || is.na(anom)) return(0)
   dist_val <- min(max(dist, 0), 100)
   anom_val <- min(max(anom, 0), 1.0)
-  
   inference <- fuzzy_inference(space_guardian_fis, list(Distance = dist_val, Anomaly = anom_val))
-  
-  # Defuzzify: if inference is empty or invalid, return 0
   res <- tryCatch({
     val <- gset_defuzzify(inference, "centroid")
-    if(is.nan(val) || is.na(val)) return(0)
+    if (is.nan(val) || is.na(val)) return(0)
     return(round(val, 1))
-  }, error = function(e) { 
-    return(0) 
-  })
-  
+  }, error = function(e) { return(0) })
   return(res)
 }
 
-# Apply Fuzzy Logic using scaled distance (normalized to 0-100 by orbit regime)
-threats$Final_Threat_Score <- mapply(calculate_threat, threats$Scaled_Distance, threats$Anomaly_Score)
+# Fuzzy inputs: scaled distance + anomaly score of the nearest threatening candidate
+threats$Final_Threat_Score <- mapply(calculate_threat,
+                                     threats$Scaled_Distance,
+                                     threats$Nearest_Threat_Anomaly)
 
 # -------------------------------------------------------------------------
-# 5. EXPORT LAYER: JSON GENERATION
+# 7. EXPORT LAYER: JSON GENERATION
 # -------------------------------------------------------------------------
 print("Exporting actionable intelligence to JSON...")
 
-# Select only the columns needed by the CesiumJS frontend
 export_data <- threats[, c("NORAD_CAT_ID", "OBJECT_NAME", "TLE_LINE1", "TLE_LINE2",
-                           "Future_Distance_to_HVA_km", "Anomaly_Score", "Final_Threat_Score",
-                           "Orbit_Regime", "Threat_Threshold")]
+                           "Min_Conjunction_Distance_km", "Anomaly_Score",
+                           "Final_Threat_Score", "Orbit_Regime",
+                           "Threat_Threshold", "Nearest_Threat_NORAD")]
 
 json_data <- toJSON(export_data, pretty = TRUE, na = "null")
-
-# Save pipeline output
 write(json_data, output_file)
 
 print("=========================================================")
-print(paste("PIPELINE COMPLETE! Data saved to:", output_file))
+print(paste("PIPELINE COMPLETE!", nrow(export_data), "threats saved to:", output_file))
 print("=========================================================")
-print(head(threats[, c("NORAD_CAT_ID", "Future_Distance_to_HVA_km", "Anomaly_Score", "Final_Threat_Score")]))
+print(head(threats[, c("NORAD_CAT_ID", "Orbit_Regime",
+                       "Min_Conjunction_Distance_km", "Anomaly_Score", "Final_Threat_Score")]))
