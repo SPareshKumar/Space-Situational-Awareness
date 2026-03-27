@@ -13,8 +13,14 @@ library(jsonlite)
 
 print("Starting Space Guardian Pipeline...")
 
-# Portable path resolution (works on any OS when run via Rscript or source())
-project_folder <- paste0(dirname(sys.frame(1)$ofile), "/")
+# Portable path resolution (works with both Rscript and source())
+args <- commandArgs(trailingOnly = FALSE)
+script_arg <- args[grep("--file=", args)]
+if (length(script_arg) > 0) {
+  project_folder <- paste0(dirname(normalizePath(sub("--file=", "", script_arg))), "/")
+} else {
+  project_folder <- paste0(dirname(normalizePath(sys.frame(1)$ofile)), "/")
+}
 input_file <- paste0(project_folder, "latest_satellites.parquet")
 output_file <- paste0(project_folder, "space_guardian_threats.json")
 
