@@ -12,10 +12,14 @@ PARQUET_PATH = os.path.join(PROJECT_ROOT, "isolation", "latest_satellites.parque
 TLE_TXT_PATH = os.path.join(PROJECT_ROOT, "visualisation", "satellites.txt")
 CACHE_EXPIRY_HOURS = 24
 
-# Use environment variables for authentication (for GitHub Actions)
-username =os.getenv("API_KEY")
-password = os.getenv("DB_PASSWORD")
+# Use environment variables for authentication
+username = os.environ.get('SPACE_TRACK_USERNAME')
+password = os.environ.get('SPACE_TRACK_PASSWORD')
 
+if not username or not password:
+    raise EnvironmentError(
+        "SPACE_TRACK_USERNAME and SPACE_TRACK_PASSWORD environment variables must be set."
+    )
 
 st = SpaceTrackClient(identity=username, password=password)
 
