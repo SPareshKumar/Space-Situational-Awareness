@@ -55,6 +55,9 @@ jobs:
           python ingestion.py
           
       - name: Run fuzzy.R pipeline
+        env:
+          SPACE_TRACK_USERNAME: ${{ secrets.SPACE_TRACK_USERNAME }}
+          SPACE_TRACK_PASSWORD: ${{ secrets.SPACE_TRACK_PASSWORD }}
         run: |
           # This runs fuzzy.R and copies the generated json to mobilisation/
           bash run_pipeline.sh
