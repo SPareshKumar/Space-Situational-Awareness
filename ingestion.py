@@ -1,4 +1,5 @@
-from dotenv import load_dotenv
+# No dotenv needed
+
 import os
 import pandas as pd
 from spacetrack import SpaceTrackClient
