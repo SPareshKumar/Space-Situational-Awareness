@@ -159,7 +159,7 @@ print(paste("Found", nrow(threats), "satellites in conjunction events."))
 # -------------------------------------------------------------------------
 print("Evaluating Multi-Domain Threat Levels...")
 
-sets_options("universe", NULL)
+sets_options("universe", seq(0, 100, 1))
 
 variables <- set(
   Distance = fuzzy_partition(varnames = c(Close = 0, Medium = 50, Far = 100), sd = 20),
