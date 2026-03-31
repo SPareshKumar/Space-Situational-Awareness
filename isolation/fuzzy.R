@@ -163,7 +163,7 @@ sets_options("universe", seq(0, 100, 1))
 
 variables <- set(
   Distance = fuzzy_partition(varnames = c(Close = 0, Medium = 50, Far = 100), sd = 20),
-  Anomaly  = fuzzy_partition(varnames = c(Normal = 0, Suspicious = 0.5, Malicious = 1.0), sd = 0.2),
+  Anomaly  = fuzzy_partition(varnames = c(Normal = 30, Suspicious = 65, Malicious = 90), sd = 15),
   Threat   = fuzzy_partition(varnames = c(Low = 10, Warning = 50, Critical = 90), sd = 15)
 )
 
@@ -184,7 +184,7 @@ space_guardian_fis <- fuzzy_system(variables, rules)
 calculate_threat <- function(dist, anom) {
   if (is.na(dist) || is.na(anom)) return(0)
   dist_val <- min(max(dist, 0), 100)
-  anom_val <- min(max(anom, 0), 1.0)
+  anom_val <- min(max(anom * 100, 0), 100)
   inference <- fuzzy_inference(space_guardian_fis, list(Distance = dist_val, Anomaly = anom_val))
   res <- tryCatch({
     val <- gset_defuzzify(inference, "centroid")
