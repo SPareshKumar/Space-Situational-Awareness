@@ -183,8 +183,8 @@ space_guardian_fis <- fuzzy_system(variables, rules)
 
 calculate_threat <- function(dist, anom) {
   if (is.na(dist) || is.na(anom)) return(0)
-  dist_val <- min(max(dist, 0), 100)
-  anom_val <- min(max(anom * 100, 0), 100)
+  dist_val <- round(min(max(dist, 0), 100))
+  anom_val <- round(min(max(anom * 100, 0), 100))
   inference <- fuzzy_inference(space_guardian_fis, list(Distance = dist_val, Anomaly = anom_val))
   res <- tryCatch({
     val <- gset_defuzzify(inference, "centroid")

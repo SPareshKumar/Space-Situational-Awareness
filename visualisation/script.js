@@ -1,8 +1,10 @@
 // 1. Initialize the Cesium Viewer
+Cesium.Ion.defaultAccessToken = undefined;
 const viewer = new Cesium.Viewer('cesiumContainer', {
-    terrainProvider: Cesium.createWorldTerrain(),
     baseLayerPicker: false,
     shouldAnimate: true,
+    imageryProvider: false,
+    terrain: undefined,
 });
 
 // 2. Load threat data, then satellite TLEs
